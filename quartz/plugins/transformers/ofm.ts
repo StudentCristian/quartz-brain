@@ -22,6 +22,12 @@ import checkboxScript from "../../components/scripts/checkbox.inline"
 // @ts-ignore
 import mermaidScript from "../../components/scripts/mermaid.inline"
 import mermaidStyle from "../../components/styles/mermaid.inline.scss"
+// @ts-ignore
+import markmapScript from "../../components/scripts/markmap.inline"
+import markmapStyle from "../../components/styles/markmap.inline.scss"
+// @ts-ignore
+import plantumlScript from "../../components/scripts/plantuml.inline"
+import plantumlStyle from "../../components/styles/plantuml.inline.scss"
 import { FilePath, pathToRoot, slugTag, slugifyFilePath } from "../../util/path"
 import { toHast } from "mdast-util-to-hast"
 import { toHtml } from "hast-util-to-html"
@@ -34,6 +40,8 @@ export interface Options {
   wikilinks: boolean
   callouts: boolean
   mermaid: boolean
+  markmap: boolean
+  plantuml: boolean
   parseTags: boolean
   parseArrows: boolean
   parseBlockReferences: boolean
@@ -50,6 +58,8 @@ const defaultOptions: Options = {
   wikilinks: true,
   callouts: true,
   mermaid: true,
+  markmap: true,
+  plantuml: true,
   parseTags: true,
   parseArrows: true,
   parseBlockReferences: true,
@@ -538,6 +548,41 @@ export const ObsidianFlavoredMarkdown: QuartzTransformerPlugin<Partial<Options>>
         })
       }
 
+      if (opts.markmap) {
+        plugins.push(() => {
+          return (tree: Root, file) => {
+            visit(tree, "code", (node: Code) => {
+              if (node.lang === "markmap") {
+                file.data.hasMarkmapDiagram = true
+                node.data = {
+                  hProperties: {
+                    className: ["markmap"],
+                  },
+                }
+              }
+            })
+          }
+        })
+      }
+
+      if (opts.plantuml) {
+        plugins.push(() => {
+          return (tree: Root, file) => {
+            visit(tree, "code", (node: Code) => {
+              if (node.lang === "plantuml") {
+                file.data.hasPlantUMLDiagram = true
+                node.data = {
+                  hProperties: {
+                    className: ["plantuml"],
+                    "data-clipboard": JSON.stringify(node.value),
+                  },
+                }
+              }
+            })
+          }
+        })
+      }
+
       return plugins
     },
     htmlPlugins() {
@@ -743,6 +788,180 @@ export const ObsidianFlavoredMarkdown: QuartzTransformerPlugin<Partial<Options>>
         })
       }
 
+      if (opts.markmap) {
+        plugins.push(() => {
+          return (tree: HtmlRoot, _file) => {
+            visit(tree, "element", (node: Element, _idx, parent) => {
+              if (
+                node.tagName === "code" &&
+                ((node.properties?.className ?? []) as string[])?.includes("markmap")
+              ) {
+                const codeContent = (node.children[0] as Literal)?.value || ""
+
+                // Store diagram source in data attribute for clipboard and rendering
+                node.properties = {
+                  ...node.properties,
+                  "data-clipboard": JSON.stringify(codeContent),
+                }
+
+                // Same structure as mermaid: expand button + code + popup container
+                parent!.children = [
+                  {
+                    type: "element",
+                    tagName: "button",
+                    properties: {
+                      className: ["expand-button"],
+                      "aria-label": "Expand markmap diagram",
+                      "data-view-component": true,
+                    },
+                    children: [
+                      {
+                        type: "element",
+                        tagName: "svg",
+                        properties: {
+                          width: 16,
+                          height: 16,
+                          viewBox: "0 0 16 16",
+                          fill: "currentColor",
+                        },
+                        children: [
+                          {
+                            type: "element",
+                            tagName: "path",
+                            properties: {
+                              fillRule: "evenodd",
+                              d: "M3.72 3.72a.75.75 0 011.06 1.06L2.56 7h10.88l-2.22-2.22a.75.75 0 011.06-1.06l3.5 3.5a.75.75 0 010 1.06l-3.5 3.5a.75.75 0 11-1.06-1.06l2.22-2.22H2.56l2.22 2.22a.75.75 0 11-1.06 1.06l-3.5-3.5a.75.75 0 010-1.06l3.5-3.5z",
+                            },
+                            children: [],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  node,
+                  {
+                    type: "element",
+                    tagName: "div",
+                    properties: {
+                      className: ["markmap-container"],
+                      "data-markmap": codeContent,
+                    },
+                    children: [],
+                  },
+                  {
+                    type: "element",
+                    tagName: "div",
+                    properties: { className: ["diagram-popup", "markmap-popup"], role: "dialog" },
+                    children: [
+                      {
+                        type: "element",
+                        tagName: "div",
+                        properties: { className: ["diagram-popup-space"] },
+                        children: [
+                          {
+                            type: "element",
+                            tagName: "div",
+                            properties: { className: ["diagram-popup-content"] },
+                            children: [],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ]
+              }
+            })
+          }
+        })
+      }
+
+      if (opts.plantuml) {
+        plugins.push(() => {
+          return (tree: HtmlRoot, _file) => {
+            visit(tree, "element", (node: Element, _idx, parent) => {
+              if (
+                node.tagName === "code" &&
+                ((node.properties?.className ?? []) as string[])?.includes("plantuml")
+              ) {
+                const codeContent = (node.children[0] as Literal)?.value || ""
+
+                // Store diagram source in data attribute for clipboard and rendering
+                node.properties = {
+                  ...node.properties,
+                  "data-clipboard": JSON.stringify(codeContent),
+                }
+
+                // Same structure as mermaid: expand button + code + popup container
+                parent!.children = [
+                  {
+                    type: "element",
+                    tagName: "button",
+                    properties: {
+                      className: ["expand-button"],
+                      "aria-label": "Expand plantuml diagram",
+                      "data-view-component": true,
+                    },
+                    children: [
+                      {
+                        type: "element",
+                        tagName: "svg",
+                        properties: {
+                          width: 16,
+                          height: 16,
+                          viewBox: "0 0 16 16",
+                          fill: "currentColor",
+                        },
+                        children: [
+                          {
+                            type: "element",
+                            tagName: "path",
+                            properties: {
+                              fillRule: "evenodd",
+                              d: "M3.72 3.72a.75.75 0 011.06 1.06L2.56 7h10.88l-2.22-2.22a.75.75 0 011.06-1.06l3.5 3.5a.75.75 0 010 1.06l-3.5 3.5a.75.75 0 11-1.06-1.06l2.22-2.22H2.56l2.22 2.22a.75.75 0 11-1.06 1.06l-3.5-3.5a.75.75 0 010-1.06l3.5-3.5z",
+                            },
+                            children: [],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  node,
+                  {
+                    type: "element",
+                    tagName: "div",
+                    properties: {
+                      className: ["plantuml-container"],
+                      "data-plantuml": codeContent,
+                    },
+                    children: [],
+                  },
+                  {
+                    type: "element",
+                    tagName: "div",
+                    properties: { className: ["diagram-popup", "plantuml-popup"], role: "dialog" },
+                    children: [
+                      {
+                        type: "element",
+                        tagName: "div",
+                        properties: { className: ["diagram-popup-space"] },
+                        children: [
+                          {
+                            type: "element",
+                            tagName: "div",
+                            properties: { className: ["diagram-popup-content"] },
+                            children: [],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ]
+              }
+            })
+          }
+        })
+      }
+
       return plugins
     },
     externalResources() {
@@ -779,6 +998,34 @@ export const ObsidianFlavoredMarkdown: QuartzTransformerPlugin<Partial<Options>>
         })
       }
 
+      if (opts.markmap) {
+        js.push({
+          script: markmapScript,
+          loadTime: "afterDOMReady",
+          contentType: "inline",
+          moduleType: "module",
+        })
+
+        css.push({
+          content: markmapStyle,
+          inline: true,
+        })
+      }
+
+      if (opts.plantuml) {
+        js.push({
+          script: plantumlScript,
+          loadTime: "afterDOMReady",
+          contentType: "inline",
+          moduleType: "module",
+        })
+
+        css.push({
+          content: plantumlStyle,
+          inline: true,
+        })
+      }
+
       return { js, css }
     },
   }
@@ -789,5 +1036,7 @@ declare module "vfile" {
     blocks: Record<string, Element>
     htmlAst: HtmlRoot
     hasMermaidDiagram: boolean | undefined
+    hasMarkmapDiagram: boolean | undefined
+    hasPlantUMLDiagram: boolean | undefined
   }
 }

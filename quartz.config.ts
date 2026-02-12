@@ -8,7 +8,7 @@ import * as Plugin from "./quartz/plugins"
  */
 const config: QuartzConfig = {
   configuration: {
-    pageTitle: "Quartz 4",
+    pageTitle: "Savant Mind",
     pageTitleSuffix: "",
     enableSPA: true,
     enablePopovers: true,
@@ -66,7 +66,7 @@ const config: QuartzConfig = {
         },
         keepBackground: false,
       }),
-      Plugin.ObsidianFlavoredMarkdown({ enableInHtmlEmbed: false }),
+      Plugin.ObsidianFlavoredMarkdown({ enableInHtmlEmbed: false, markmap: true, plantuml: true }),
       Plugin.GitHubFlavoredMarkdown(),
       Plugin.TableOfContents(),
       Plugin.CrawlLinks({ markdownLinkResolution: "shortest" }),
@@ -84,6 +84,7 @@ const config: QuartzConfig = {
         enableSiteMap: true,
         enableRSS: true,
       }),
+      Plugin.ContentIndexJsonl(),
       Plugin.Assets(),
       Plugin.Static(),
       Plugin.Favicon(),

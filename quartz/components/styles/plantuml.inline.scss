@@ -1,0 +1,39 @@
+// Hide source code next to rendered plantuml diagram
+pre:has(.plantuml-container) > code.plantuml {
+  display: none !important;
+}
+
+// Ensure buttons stay above diagram container
+pre:has(.plantuml-container) {
+  position: relative;
+
+  > .expand-button,
+  > .clipboard-button {
+    z-index: 10;
+    pointer-events: auto;
+  }
+}
+
+.plantuml-container {
+  width: 100%;
+  text-align: center;
+  padding: 1rem 0;
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  svg {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+// Dark mode: invert PlantUML SVG diagrams for readability
+:root[saved-theme="dark"] {
+  .plantuml-container img,
+  .plantuml-popup .diagram-popup-content img {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}

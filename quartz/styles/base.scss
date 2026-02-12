@@ -452,7 +452,11 @@ pre {
   border: 1px solid var(--lightgray);
   position: relative;
 
-  &:has(> code.mermaid) {
+  &:has(> code.mermaid),
+  &:has(.markmap-container),
+  &:has(> code.markmap),
+  &:has(.plantuml-container),
+  &:has(> code.plantuml) {
     border: none;
   }
 
