@@ -59,4 +59,4 @@ Markmap es perfecto para:
 - Documentación estructurada
 - Mapas mentales de proyectos
 
-[[test-plantuml.md]]
+[[plantuml.md]]

@@ -9,7 +9,7 @@ interface JsonlEntry {
   tags: string[]
   links: SimpleSlug[]
   aliases: string[]
-  excerpt: string
+  content: string
   wordCount: number
 }
 
@@ -20,11 +20,11 @@ function buildJsonlEntry(
   tags: string[],
   links: SimpleSlug[],
   aliases: string[],
-  content: string,
+  text: string,
 ): JsonlEntry {
-  const excerpt = content.slice(0, 200)
-  const wordCount = content.split(/\s+/).filter((w) => w.length > 0).length
-  return { slug, filePath, title, tags, links, aliases, excerpt, wordCount } 
+  const content = text
+  const wordCount = text.split(/\s+/).filter((w) => w.length > 0).length
+  return { slug, filePath, title, tags, links, aliases, content, wordCount } 
 }
 
 function generateJsonlContent(entries: JsonlEntry[]): string {

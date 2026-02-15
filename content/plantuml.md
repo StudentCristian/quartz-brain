@@ -135,4 +135,4 @@ sequenceDiagram
   Bob-->>John: Jolly good!
 ```
 
-[[test-plantuml.md]]
+[[markmap.md]]
