@@ -20,13 +20,14 @@ import { registerEscapeHandler, removeAllChildren } from "./util"
 import { FullSlug, SimpleSlug, getFullSlug, resolveRelative, simplifySlug } from "../../util/path"
 import { BrainD3Config } from "../BrainGraph"
 
-// Brain region positions (normalized 0-1, shaped like a brain viewed from above)
+// Brain region positions (normalized 0-1) — asymmetric offsets for organic brain shape
+// NOT a cross: positions are staggered to produce an elliptical, brain-like silhouette
 const BRAIN_REGIONS: Record<string, { x: number; y: number }> = {
-  executive: { x: 0.5, y: 0.22 },   // Frontal lobe - top center
-  logical: { x: 0.22, y: 0.52 },    // Left hemisphere
-  creative: { x: 0.78, y: 0.52 },   // Right hemisphere
-  core: { x: 0.5, y: 0.72 },        // Brain stem / base
-  default: { x: 0.5, y: 0.47 },     // Center
+  executive: { x: 0.48, y: 0.24 },   // Frontal lobe — slightly left of center, top
+  logical:   { x: 0.24, y: 0.48 },   // Left hemisphere — upper-left arc
+  creative:  { x: 0.76, y: 0.44 },   // Right hemisphere — upper-right arc (asymmetric)
+  core:      { x: 0.46, y: 0.74 },   // Brain stem — slightly left, bottom
+  default:   { x: 0.50, y: 0.50 },   // Corpus callosum — center hub
 }
 
 type GraphicsInfo = {
@@ -173,27 +174,58 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const width = graph.offsetWidth
   const height = Math.max(graph.offsetHeight, 250)
 
-  const strength = brainLayoutStrength ?? 0.25
+  const strength = brainLayoutStrength ?? 0.2
 
-  // Brain-region simulation using forceX/forceY instead of forceCenter
+  // Ellipse parameters for brain-shaped containment
+  const cx = width * 0.5
+  const cy = height * 0.5
+  const rx = width * 0.42   // horizontal radius (wider)
+  const ry = height * 0.40  // vertical radius (slightly shorter → oval)
+
+  // Custom elliptical containment force — pushes nodes back inside the oval
+  function forceEllipse(strengthVal: number) {
+    let nodes: NodeData[] = []
+    function force(alpha: number) {
+      for (const d of nodes) {
+        const dx = (d.x! - cx) / rx
+        const dy = (d.y! - cy) / ry
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist > 1) {
+          const push = (dist - 1) * strengthVal * alpha
+          d.vx! -= (dx / dist) * push * rx
+          d.vy! -= (dy / dist) * push * ry
+        }
+      }
+    }
+    force.initialize = (n: NodeData[]) => { nodes = n }
+    return force
+  }
+
+  // Brain-region simulation — organic layout with elliptical containment
   const simulation: Simulation<NodeData, LinkData> = forceSimulation<NodeData>(graphData.nodes)
-    .force("charge", forceManyBody().strength(-80 * repelForce))
-    .force("link", forceLink(graphData.links).distance(linkDistance))
-    .force("collide", forceCollide<NodeData>((n) => nodeRadius(n) + 8).iterations(4))
+    .force("charge", forceManyBody().strength(-30 * repelForce))
+    .force("link", forceLink(graphData.links).distance(linkDistance).strength(0.4))
+    .force("collide", forceCollide<NodeData>((n) => nodeRadius(n) + 6).iterations(3))
     .force(
       "x",
       forceX<NodeData>((d) => {
         const region = d.brain && BRAIN_REGIONS[d.brain] ? d.brain : "default"
         return width * BRAIN_REGIONS[region].x
-      }).strength(strength),
+      }).strength((d) => {
+        // Unclassified nodes get pulled harder to center (corpus callosum)
+        return (!d.brain || !BRAIN_REGIONS[d.brain]) ? strength * 1.5 : strength
+      }),
     )
     .force(
       "y",
       forceY<NodeData>((d) => {
         const region = d.brain && BRAIN_REGIONS[d.brain] ? d.brain : "default"
         return height * BRAIN_REGIONS[region].y
-      }).strength(strength),
+      }).strength((d) => {
+        return (!d.brain || !BRAIN_REGIONS[d.brain]) ? strength * 1.5 : strength
+      }),
     )
+    .force("ellipse", forceEllipse(0.6) as any)
 
   // precompute style prop strings as pixi doesn't support css variables
   const cssVars = [
@@ -570,10 +602,27 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
 
     for (const l of linkRenderData) {
       const linkData = l.simulationData
+      const sx = linkData.source.x!
+      const sy = linkData.source.y!
+      const tx = linkData.target.x!
+      const ty = linkData.target.y!
+
+      // Curved edges — quadratic Bézier with control point offset perpendicular to midpoint
+      const mx = (sx + tx) / 2
+      const my = (sy + ty) / 2
+      const dx = tx - sx
+      const dy = ty - sy
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      // Perpendicular offset proportional to distance (capped)
+      const curvature = Math.min(dist * 0.15, 20)
+      // Offset perpendicular to the link direction
+      const cpx = mx + (-dy / dist) * curvature
+      const cpy = my + (dx / dist) * curvature
+
       l.gfx.clear()
-      l.gfx.moveTo(linkData.source.x!, linkData.source.y!)
+      l.gfx.moveTo(sx, sy)
       l.gfx
-        .lineTo(linkData.target.x!, linkData.target.y!)
+        .quadraticCurveTo(cpx, cpy, tx, ty)
         .stroke({ alpha: l.alpha, width: 1, color: l.color })
     }
 
