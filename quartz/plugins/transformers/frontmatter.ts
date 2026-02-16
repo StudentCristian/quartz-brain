@@ -119,6 +119,9 @@ export const FrontMatter: QuartzTransformerPlugin<Partial<Options>> = (userOpts)
 
             if (socialImage) data.socialImage = socialImage
 
+            const brain = coalesceAliases(data, ["brain", "brainRegion"])
+            if (brain) data.brain = brain.toString()
+
             // Remove duplicate slugs
             const uniqueSlugs = [...new Set(allSlugs)]
             allSlugs.splice(0, allSlugs.length, ...uniqueSlugs)
@@ -152,6 +155,7 @@ declare module "vfile" {
         cssclasses: string[]
         socialImage: string
         comments: boolean | string
+        brain: "executive" | "logical" | "creative" | "core"
       }>
   }
 }

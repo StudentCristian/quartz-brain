@@ -1,3 +1,16 @@
 @use "./base.scss";
 
-// put your custom CSS here!
+// Brain region colors for BrainGraph component
+:root {
+  --brain-executive: #00c853;
+  --brain-logical: #00bcd4;
+  --brain-creative: #e91e63;
+  --brain-core: #ffc107;
+}
+
+[saved-theme="dark"] {
+  --brain-executive: #69f0ae;
+  --brain-logical: #4dd0e1;
+  --brain-creative: #ff80ab;
+  --brain-core: #ffd54f;
+}

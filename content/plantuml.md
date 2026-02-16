@@ -3,6 +3,7 @@ title: Test PlantUML
 tags:
   - plantuml
 date: 2026-02-07
+brain: logical
 ---
 
 # Test PlantUML - Diagramas UML

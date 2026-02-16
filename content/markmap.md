@@ -3,6 +3,7 @@ title: Test Markmap
 tags:
   - markmap
 date: 2026-02-07
+brain: logical
 ---
 
 # Test Markmap - Mind Map Interactivo

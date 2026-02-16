@@ -1,6 +1,7 @@
 ---  
 title: Docker Basics  
 tags: [docker, containers, devops]  
+brain: logical
 ---  
   
 # Docker Fundamentals  

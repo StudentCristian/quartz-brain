@@ -1,6 +1,7 @@
 ---  
 title: Git Hooks Automation  
 tags: [git, automation, hooks, devops]  
+brain: logical
 ---  
   
 # Git Hooks  
