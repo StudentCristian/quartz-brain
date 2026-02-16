@@ -20,13 +20,13 @@ import { registerEscapeHandler, removeAllChildren } from "./util"
 import { FullSlug, SimpleSlug, getFullSlug, resolveRelative, simplifySlug } from "../../util/path"
 import { BrainD3Config } from "../BrainGraph"
 
-// Brain region positions (normalized 0-1)
+// Brain region positions (normalized 0-1, shaped like a brain viewed from above)
 const BRAIN_REGIONS: Record<string, { x: number; y: number }> = {
-  executive: { x: 0.5, y: 0.3 },
-  logical: { x: 0.3, y: 0.55 },
-  creative: { x: 0.7, y: 0.55 },
-  core: { x: 0.5, y: 0.8 },
-  default: { x: 0.5, y: 0.5 },
+  executive: { x: 0.5, y: 0.22 },   // Frontal lobe - top center
+  logical: { x: 0.22, y: 0.52 },    // Left hemisphere
+  creative: { x: 0.78, y: 0.52 },   // Right hemisphere
+  core: { x: 0.5, y: 0.72 },        // Brain stem / base
+  default: { x: 0.5, y: 0.47 },     // Center
 }
 
 type GraphicsInfo = {
@@ -177,9 +177,9 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
 
   // Brain-region simulation using forceX/forceY instead of forceCenter
   const simulation: Simulation<NodeData, LinkData> = forceSimulation<NodeData>(graphData.nodes)
-    .force("charge", forceManyBody().strength(-30 * repelForce))
+    .force("charge", forceManyBody().strength(-80 * repelForce))
     .force("link", forceLink(graphData.links).distance(linkDistance))
-    .force("collide", forceCollide<NodeData>((n) => nodeRadius(n) + 4).iterations(3))
+    .force("collide", forceCollide<NodeData>((n) => nodeRadius(n) + 8).iterations(4))
     .force(
       "x",
       forceX<NodeData>((d) => {
