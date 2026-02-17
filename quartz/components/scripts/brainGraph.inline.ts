@@ -31,10 +31,10 @@ type BrainRegion = {
 // Region anchors are mapped inside a two-lobe brain silhouette.
 // The force is intentionally soft so graph keeps its rhizomatic behavior.
 const BRAIN_REGIONS: Record<string, BrainRegion> = {
-  executive: { x: 0.44, y: 0.34, hemisphere: "left" },
+  executive: { x: 0.44, y: 0.34, hemisphere: "center" },
   logical: { x: 0.34, y: 0.5, hemisphere: "left" },
   creative: { x: 0.66, y: 0.5, hemisphere: "right" },
-  core: { x: 0.56, y: 0.66, hemisphere: "right" },
+  core: { x: 0.5, y: 0.66, hemisphere: "center" },
   default: { x: 0.5, y: 0.54, hemisphere: "center" },
 }
 
@@ -232,8 +232,12 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
           ? brainLayout.lobeOffset
           : 0
 
+    // Normalize hemisphere shift so it is scaled consistently with the anchor x-coordinate.
+    const hemisphereShiftNormalized =
+      hemisphereShift === 0 ? 0 : hemisphereShift / (brainLayout.lobeRadiusX * 2.1)
+
     return {
-      x: (anchor.x - 0.5) * (brainLayout.lobeRadiusX * 2.1) + hemisphereShift,
+      x: (anchor.x - 0.5 + hemisphereShiftNormalized) * (brainLayout.lobeRadiusX * 2.1),
       y: (anchor.y - 0.5) * (brainLayout.lobeRadiusY * 2.2),
     }
   }
