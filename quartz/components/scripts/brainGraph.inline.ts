@@ -5,8 +5,10 @@ import {
   Simulation,
   forceSimulation,
   forceManyBody,
+  forceCenter,
   forceLink,
   forceCollide,
+  forceRadial,
   forceX,
   forceY,
   zoomIdentity,
@@ -20,14 +22,14 @@ import { registerEscapeHandler, removeAllChildren } from "./util"
 import { FullSlug, SimpleSlug, getFullSlug, resolveRelative, simplifySlug } from "../../util/path"
 import { BrainD3Config } from "../BrainGraph"
 
-// Brain region positions (normalized 0-1) — asymmetric offsets for organic brain shape
-// NOT a cross: positions are staggered to produce an elliptical, brain-like silhouette
+// Brain region positions (normalized 0-1) — very subtle offsets from center
+// Just enough to tint direction, not enough to create visible separation
 const BRAIN_REGIONS: Record<string, { x: number; y: number }> = {
-  executive: { x: 0.48, y: 0.24 },   // Frontal lobe — slightly left of center, top
-  logical:   { x: 0.24, y: 0.48 },   // Left hemisphere — upper-left arc
-  creative:  { x: 0.76, y: 0.44 },   // Right hemisphere — upper-right arc (asymmetric)
-  core:      { x: 0.46, y: 0.74 },   // Brain stem — slightly left, bottom
-  default:   { x: 0.50, y: 0.50 },   // Corpus callosum — center hub
+  executive: { x: 0.50, y: 0.46 },   // Frontal — barely above center
+  logical:   { x: 0.46, y: 0.51 },   // Left — barely left of center
+  creative:  { x: 0.54, y: 0.50 },   // Right — barely right of center
+  core:      { x: 0.50, y: 0.54 },   // Base — barely below center
+  default:   { x: 0.50, y: 0.50 },   // Center hub
 }
 
 type GraphicsInfo = {
@@ -96,7 +98,8 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
     removeTags,
     showTags,
     focusOnHover,
-    brainLayoutStrength,
+    centerForce,
+    enableRadial,
   } = JSON.parse(graph.dataset["cfg"]!) as BrainD3Config
 
   const data: Map<SimpleSlug, ContentDetails> = new Map(
@@ -152,13 +155,45 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
     if (showTags) tags.forEach((tag) => neighbourhood.add(tag))
   }
 
+  // Pre-compute effective brain region for tag nodes:
+  // Each tag inherits the region of its most-connected content notes
+  const tagBrainMap = new Map<SimpleSlug, string>()
+  if (showTags) {
+    for (const tag of tags) {
+      if (!neighbourhood.has(tag)) continue
+      // Find all content nodes connected to this tag
+      const connectedBrains: Record<string, number> = {}
+      for (const link of links) {
+        let contentSlug: SimpleSlug | null = null
+        if (link.source === tag) contentSlug = link.target
+        else if (link.target === tag) contentSlug = link.source
+        if (contentSlug && data.has(contentSlug)) {
+          const brain = data.get(contentSlug)?.brain
+          if (brain && BRAIN_REGIONS[brain]) {
+            connectedBrains[brain] = (connectedBrains[brain] ?? 0) + 1
+          }
+        }
+      }
+      // Pick the region with most connections, or leave undefined
+      const entries = Object.entries(connectedBrains)
+      if (entries.length > 0) {
+        entries.sort((a, b) => b[1] - a[1])
+        tagBrainMap.set(tag, entries[0][0])
+      }
+    }
+  }
+
   const nodes: NodeData[] = [...neighbourhood].map((url) => {
     const text = url.startsWith("tags/") ? "#" + url.substring(5) : (data.get(url)?.title ?? url)
+    // Tags use inherited brain region; content notes use their own
+    const brain = url.startsWith("tags/")
+      ? tagBrainMap.get(url as SimpleSlug)
+      : data.get(url)?.brain
     return {
       id: url,
       text,
       tags: data.get(url)?.tags ?? [],
-      brain: data.get(url)?.brain,
+      brain,
     }
   })
   const graphData: { nodes: NodeData[]; links: LinkData[] } = {
@@ -174,58 +209,17 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const width = graph.offsetWidth
   const height = Math.max(graph.offsetHeight, 250)
 
-  const strength = brainLayoutStrength ?? 0.2
-
-  // Ellipse parameters for brain-shaped containment
-  const cx = width * 0.5
-  const cy = height * 0.5
-  const rx = width * 0.42   // horizontal radius (wider)
-  const ry = height * 0.40  // vertical radius (slightly shorter → oval)
-
-  // Custom elliptical containment force — pushes nodes back inside the oval
-  function forceEllipse(strengthVal: number) {
-    let nodes: NodeData[] = []
-    function force(alpha: number) {
-      for (const d of nodes) {
-        const dx = (d.x! - cx) / rx
-        const dy = (d.y! - cy) / ry
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        if (dist > 1) {
-          const push = (dist - 1) * strengthVal * alpha
-          d.vx! -= (dx / dist) * push * rx
-          d.vy! -= (dy / dist) * push * ry
-        }
-      }
-    }
-    force.initialize = (n: NodeData[]) => { nodes = n }
-    return force
-  }
-
-  // Brain-region simulation — organic layout with elliptical containment
+  // Simulation — graph forces + forceX/forceY to prevent orphan nodes from drifting
   const simulation: Simulation<NodeData, LinkData> = forceSimulation<NodeData>(graphData.nodes)
-    .force("charge", forceManyBody().strength(-30 * repelForce))
-    .force("link", forceLink(graphData.links).distance(linkDistance).strength(0.4))
-    .force("collide", forceCollide<NodeData>((n) => nodeRadius(n) + 6).iterations(3))
-    .force(
-      "x",
-      forceX<NodeData>((d) => {
-        const region = d.brain && BRAIN_REGIONS[d.brain] ? d.brain : "default"
-        return width * BRAIN_REGIONS[region].x
-      }).strength((d) => {
-        // Unclassified nodes get pulled harder to center (corpus callosum)
-        return (!d.brain || !BRAIN_REGIONS[d.brain]) ? strength * 1.5 : strength
-      }),
-    )
-    .force(
-      "y",
-      forceY<NodeData>((d) => {
-        const region = d.brain && BRAIN_REGIONS[d.brain] ? d.brain : "default"
-        return height * BRAIN_REGIONS[region].y
-      }).strength((d) => {
-        return (!d.brain || !BRAIN_REGIONS[d.brain]) ? strength * 1.5 : strength
-      }),
-    )
-    .force("ellipse", forceEllipse(0.6) as any)
+    .force("charge", forceManyBody().strength(-100 * repelForce))
+    .force("center", forceCenter().strength(centerForce))
+    .force("link", forceLink(graphData.links).distance(linkDistance))
+    .force("collide", forceCollide<NodeData>((n) => nodeRadius(n)).iterations(3))
+    .force("x", forceX(0).strength(0.3))
+    .force("y", forceY(0).strength(0.3))
+
+  const radius = (Math.min(width, height) / 2) * 0.8
+  if (enableRadial) simulation.force("radial", forceRadial(radius).strength(0.2))
 
   // precompute style prop strings as pixi doesn't support css variables
   const cssVars = [
@@ -258,6 +252,51 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
       .getPropertyValue("--brain-creative")
       .trim(),
     core: getComputedStyle(document.documentElement).getPropertyValue("--brain-core").trim(),
+  }
+
+  // Parse hex color to RGB components
+  function hexToRgb(hex: string): [number, number, number] {
+    hex = hex.replace(/^#/, "")
+    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2]
+    const n = parseInt(hex, 16)
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+  }
+
+  function rgbToHex(r: number, g: number, b: number): string {
+    return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)
+  }
+
+  // For unclassified nodes, compute a blended color based on proximity to brain region anchors
+  function proximityColor(d: NodeData): string {
+    const px = ((d.x ?? 0) + width / 2) / width
+    const py = ((d.y ?? 0) + height / 2) / height
+    const regionKeys = ["executive", "logical", "creative", "core"] as const
+    let totalWeight = 0
+    const weights: number[] = []
+    for (const key of regionKeys) {
+      const dx = px - BRAIN_REGIONS[key].x
+      const dy = py - BRAIN_REGIONS[key].y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const w = 1 / Math.max(dist, 0.01)
+      weights.push(w)
+      totalWeight += w
+    }
+    // Weighted average of region colors
+    let r = 0, g = 0, b = 0
+    for (let i = 0; i < regionKeys.length; i++) {
+      const ratio = weights[i] / totalWeight
+      const [cr, cg, cb] = hexToRgb(brainColors[regionKeys[i]])
+      r += cr * ratio
+      g += cg * ratio
+      b += cb * ratio
+    }
+    // Desaturate toward gray (30% blend with gray) to keep them subtle
+    const gray = hexToRgb(computedStyleMap["--gray"])
+    return rgbToHex(
+      Math.round(r * 0.45 + gray[0] * 0.55),
+      Math.round(g * 0.45 + gray[1] * 0.55),
+      Math.round(b * 0.45 + gray[2] * 0.55),
+    )
   }
 
   const color = (d: NodeData) => {
@@ -434,7 +473,7 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const labelsContainer = new Container<Text>({ zIndex: 3, isRenderGroup: true })
   const nodesContainer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true })
   const linkContainer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true })
-  stage.addChild(nodesContainer, labelsContainer, linkContainer)
+  stage.addChild(linkContainer, nodesContainer, labelsContainer)
 
   for (const n of graphData.nodes) {
     const nodeId = n.id
@@ -592,37 +631,59 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
     for (const n of nodeRenderData) {
       const { x, y } = n.simulationData
       if (!x || !y) continue
-      // Brain graph positions nodes absolutely (forceX/forceY target absolute positions)
-      // so we don't add width/2, height/2 offset
-      n.gfx.position.set(x, y)
+      n.gfx.position.set(x + width / 2, y + height / 2)
       if (n.label) {
-        n.label.position.set(x, y)
+        n.label.position.set(x + width / 2, y + height / 2)
+      }
+
+      // Dynamic proximity-based color for unclassified nodes (gradient transitions)
+      const d = n.simulationData
+      const isTag = d.id.startsWith("tags/")
+      if (!d.brain && !isTag && d.id !== slug && !visited.has(d.id)) {
+        const newColor = proximityColor(d)
+        n.gfx.clear()
+        n.gfx.circle(0, 0, nodeRadius(d)).fill({ color: newColor })
+      } else if (isTag) {
+        // Tag nodes also get proximity tint (subtle)
+        const newColor = proximityColor(d)
+        n.gfx.clear()
+        n.gfx.circle(0, 0, nodeRadius(d))
+          .fill({ color: computedStyleMap["--light"] })
+          .stroke({ width: 2, color: newColor })
       }
     }
 
-    for (const l of linkRenderData) {
+    for (let li = 0; li < linkRenderData.length; li++) {
+      const l = linkRenderData[li]
       const linkData = l.simulationData
-      const sx = linkData.source.x!
-      const sy = linkData.source.y!
-      const tx = linkData.target.x!
-      const ty = linkData.target.y!
+      const sx = linkData.source.x! + width / 2
+      const sy = linkData.source.y! + height / 2
+      const tx = linkData.target.x! + width / 2
+      const ty = linkData.target.y! + height / 2
 
-      // Curved edges — quadratic Bézier with control point offset perpendicular to midpoint
-      const mx = (sx + tx) / 2
-      const my = (sy + ty) / 2
       const dx = tx - sx
       const dy = ty - sy
       const dist = Math.sqrt(dx * dx + dy * dy)
-      // Perpendicular offset proportional to distance (capped)
-      const curvature = Math.min(dist * 0.15, 20)
-      // Offset perpendicular to the link direction
-      const cpx = mx + (-dy / dist) * curvature
-      const cpy = my + (dx / dist) * curvature
+      if (dist < 0.1) { l.gfx.clear(); continue }
+
+      // Rhizomatic cubic Bézier: two control points for S-curve dendrite-like paths
+      // Alternate curvature direction based on link index for visual variety
+      const sign = (li % 2 === 0) ? 1 : -1
+      const curveMag = Math.min(dist * 0.18, 25)
+      // Perpendicular unit vector
+      const px = -dy / dist
+      const py = dx / dist
+      // First control point at 1/3, offset perpendicular
+      const cp1x = sx + dx * 0.33 + px * curveMag * sign
+      const cp1y = sy + dy * 0.33 + py * curveMag * sign
+      // Second control point at 2/3, offset in OPPOSITE direction (creates S-curve)
+      const cp2x = sx + dx * 0.67 - px * curveMag * sign * 0.5
+      const cp2y = sy + dy * 0.67 - py * curveMag * sign * 0.5
 
       l.gfx.clear()
       l.gfx.moveTo(sx, sy)
       l.gfx
-        .quadraticCurveTo(cpx, cpy, tx, ty)
+        .bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty)
         .stroke({ alpha: l.alpha, width: 1, color: l.color })
     }
 

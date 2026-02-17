@@ -11,13 +11,14 @@ export interface BrainD3Config {
   depth: number
   scale: number
   repelForce: number
+  centerForce: number
   linkDistance: number
   fontSize: number
   opacityScale: number
   removeTags: string[]
   showTags: boolean
   focusOnHover?: boolean
-  brainLayoutStrength?: number
+  enableRadial?: boolean
 }
 
 interface BrainGraphOptions {
@@ -32,13 +33,14 @@ const defaultOptions: BrainGraphOptions = {
     depth: 1,
     scale: 1.1,
     repelForce: 0.5,
+    centerForce: 0.3,
     linkDistance: 30,
     fontSize: 0.6,
     opacityScale: 1,
     showTags: true,
     removeTags: [],
     focusOnHover: false,
-    brainLayoutStrength: 0.25,
+    enableRadial: false,
   },
   globalGraph: {
     drag: true,
@@ -46,13 +48,14 @@ const defaultOptions: BrainGraphOptions = {
     depth: -1,
     scale: 0.9,
     repelForce: 0.5,
+    centerForce: 0.2,
     linkDistance: 30,
     fontSize: 0.6,
     opacityScale: 1,
     showTags: true,
     removeTags: [],
     focusOnHover: true,
-    brainLayoutStrength: 0.3,
+    enableRadial: false,
   },
 }
 
