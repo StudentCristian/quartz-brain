@@ -572,7 +572,142 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const labelsContainer = new Container<Text>({ zIndex: 3, isRenderGroup: true })
   const nodesContainer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true })
   const linkContainer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true })
-  stage.addChild(linkContainer, nodesContainer, labelsContainer)
+  const bgContainer = new Container<Graphics>({ zIndex: 0, isRenderGroup: true })
+  stage.addChild(bgContainer, linkContainer, nodesContainer, labelsContainer)
+
+  const brainOutline = new Graphics({ interactive: false, eventMode: "none" })
+  const leftHemisphere = new Graphics({ interactive: false, eventMode: "none" })
+  const rightHemisphere = new Graphics({ interactive: false, eventMode: "none" })
+  const divider = new Graphics({ interactive: false, eventMode: "none" })
+  const sulci = new Graphics({ interactive: false, eventMode: "none" })
+
+  const top = brainLayout.centerY - brainLayout.lobeRadiusY * 0.92
+  const bottom = brainLayout.centerY + brainLayout.lobeRadiusY * 0.9
+  const leftEdge = brainLayout.centerX - brainLayout.lobeOffset - brainLayout.lobeRadiusX * 0.98
+  const rightEdge = brainLayout.centerX + brainLayout.lobeOffset + brainLayout.lobeRadiusX * 0.98
+  const crownY = brainLayout.centerY - brainLayout.lobeRadiusY * 1.06
+
+  leftHemisphere
+    .moveTo(brainLayout.centerX - 2, top + 8)
+    .bezierCurveTo(
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.62,
+      crownY,
+      leftEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.45,
+      leftEdge + 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      leftEdge + 12,
+      bottom - brainLayout.lobeRadiusY * 0.16,
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.45,
+      bottom,
+      brainLayout.centerX - 6,
+      bottom - 6,
+    )
+    .quadraticCurveTo(
+      brainLayout.centerX - 12,
+      brainLayout.centerY,
+      brainLayout.centerX - 2,
+      top + 8,
+    )
+    .fill({ color: brainColors.logical, alpha: 0.08 })
+
+  rightHemisphere
+    .moveTo(brainLayout.centerX + 2, top + 8)
+    .bezierCurveTo(
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.62,
+      crownY,
+      rightEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.45,
+      rightEdge - 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      rightEdge - 12,
+      bottom - brainLayout.lobeRadiusY * 0.16,
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.45,
+      bottom,
+      brainLayout.centerX + 6,
+      bottom - 6,
+    )
+    .quadraticCurveTo(
+      brainLayout.centerX + 12,
+      brainLayout.centerY,
+      brainLayout.centerX + 2,
+      top + 8,
+    )
+    .fill({ color: brainColors.creative, alpha: 0.08 })
+
+  brainOutline
+    .moveTo(brainLayout.centerX - 2, top + 6)
+    .bezierCurveTo(
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.58,
+      crownY - 8,
+      leftEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.42,
+      leftEdge + 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      leftEdge + 12,
+      bottom - brainLayout.lobeRadiusY * 0.14,
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.42,
+      bottom + 4,
+      brainLayout.centerX,
+      bottom - 8,
+    )
+    .bezierCurveTo(
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.42,
+      bottom + 4,
+      rightEdge - 12,
+      bottom - brainLayout.lobeRadiusY * 0.14,
+      rightEdge - 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      rightEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.42,
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.58,
+      crownY - 8,
+      brainLayout.centerX + 2,
+      top + 6,
+    )
+    .stroke({ color: computedStyleMap["--lightgray"], alpha: 0.3, width: 2 })
+
+  divider
+    .moveTo(brainLayout.centerX, top + 8)
+    .bezierCurveTo(
+      brainLayout.centerX + 10,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.24,
+      brainLayout.centerX - 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.26,
+      brainLayout.centerX,
+      bottom - 10,
+    )
+    .stroke({ color: computedStyleMap["--lightgray"], alpha: 0.38, width: 2 })
+
+  const drawSulcus = (xFactor: number, bend: number) => {
+    const x = brainLayout.centerX + brainLayout.lobeRadiusX * xFactor
+    sulci
+      .moveTo(x, brainLayout.centerY - brainLayout.lobeRadiusY * 0.65)
+      .bezierCurveTo(
+        x + bend,
+        brainLayout.centerY - brainLayout.lobeRadiusY * 0.28,
+        x - bend,
+        brainLayout.centerY + brainLayout.lobeRadiusY * 0.15,
+        x,
+        brainLayout.centerY + brainLayout.lobeRadiusY * 0.52,
+      )
+  }
+
+  drawSulcus(-0.52, 8)
+  drawSulcus(-0.3, -10)
+  drawSulcus(0.3, 10)
+  drawSulcus(0.52, -8)
+  sulci.stroke({ color: computedStyleMap["--lightgray"], alpha: 0.16, width: 1.5 })
+
+  bgContainer.addChild(leftHemisphere, rightHemisphere, sulci, divider, brainOutline)
 
   for (const n of graphData.nodes) {
     const nodeId = n.id
