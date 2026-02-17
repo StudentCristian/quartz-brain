@@ -22,14 +22,20 @@ import { registerEscapeHandler, removeAllChildren } from "./util"
 import { FullSlug, SimpleSlug, getFullSlug, resolveRelative, simplifySlug } from "../../util/path"
 import { BrainD3Config } from "../BrainGraph"
 
-// Brain region positions (normalized 0-1) — very subtle offsets from center
-// Just enough to tint direction, not enough to create visible separation
-const BRAIN_REGIONS: Record<string, { x: number; y: number }> = {
-  executive: { x: 0.50, y: 0.46 },   // Frontal — barely above center
-  logical:   { x: 0.46, y: 0.51 },   // Left — barely left of center
-  creative:  { x: 0.54, y: 0.50 },   // Right — barely right of center
-  core:      { x: 0.50, y: 0.54 },   // Base — barely below center
-  default:   { x: 0.50, y: 0.50 },   // Center hub
+type BrainRegion = {
+  x: number
+  y: number
+  hemisphere: "left" | "right" | "center"
+}
+
+// Region anchors are mapped inside a two-lobe brain silhouette.
+// The force is intentionally soft so graph keeps its rhizomatic behavior.
+const BRAIN_REGIONS: Record<string, BrainRegion> = {
+  executive: { x: 0.44, y: 0.34, hemisphere: "left" },
+  logical: { x: 0.34, y: 0.5, hemisphere: "left" },
+  creative: { x: 0.66, y: 0.5, hemisphere: "right" },
+  core: { x: 0.56, y: 0.66, hemisphere: "right" },
+  default: { x: 0.5, y: 0.54, hemisphere: "center" },
 }
 
 type GraphicsInfo = {
@@ -209,14 +215,37 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const width = graph.offsetWidth
   const height = Math.max(graph.offsetHeight, 250)
 
+  const brainLayout = {
+    centerX: width / 2,
+    centerY: height / 2,
+    lobeOffset: Math.min(width, height) * 0.14,
+    lobeRadiusX: Math.min(width * 0.24, 180),
+    lobeRadiusY: Math.min(height * 0.34, 200),
+  }
+
+  function regionTarget(region?: string): { x: number; y: number } {
+    const anchor = region ? (BRAIN_REGIONS[region] ?? BRAIN_REGIONS.default) : BRAIN_REGIONS.default
+    const hemisphereShift =
+      anchor.hemisphere === "left"
+        ? -brainLayout.lobeOffset
+        : anchor.hemisphere === "right"
+          ? brainLayout.lobeOffset
+          : 0
+
+    return {
+      x: (anchor.x - 0.5) * (brainLayout.lobeRadiusX * 2.1) + hemisphereShift,
+      y: (anchor.y - 0.5) * (brainLayout.lobeRadiusY * 2.2),
+    }
+  }
+
   // Simulation — graph forces + forceX/forceY to prevent orphan nodes from drifting
   const simulation: Simulation<NodeData, LinkData> = forceSimulation<NodeData>(graphData.nodes)
     .force("charge", forceManyBody().strength(-100 * repelForce))
     .force("center", forceCenter().strength(centerForce))
     .force("link", forceLink(graphData.links).distance(linkDistance))
     .force("collide", forceCollide<NodeData>((n) => nodeRadius(n)).iterations(3))
-    .force("x", forceX(0).strength(0.3))
-    .force("y", forceY(0).strength(0.3))
+    .force("x", forceX<NodeData>((d) => regionTarget(d.brain).x).strength(0.12))
+    .force("y", forceY<NodeData>((d) => regionTarget(d.brain).y).strength(0.14))
 
   const radius = (Math.min(width, height) / 2) * 0.8
   if (enableRadial) simulation.force("radial", forceRadial(radius).strength(0.2))
@@ -245,9 +274,7 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
     executive: getComputedStyle(document.documentElement)
       .getPropertyValue("--brain-executive")
       .trim(),
-    logical: getComputedStyle(document.documentElement)
-      .getPropertyValue("--brain-logical")
-      .trim(),
+    logical: getComputedStyle(document.documentElement).getPropertyValue("--brain-logical").trim(),
     creative: getComputedStyle(document.documentElement)
       .getPropertyValue("--brain-creative")
       .trim(),
@@ -257,7 +284,7 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   // Parse hex color to RGB components
   function hexToRgb(hex: string): [number, number, number] {
     hex = hex.replace(/^#/, "")
-    if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2]
+    if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2]
     const n = parseInt(hex, 16)
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
   }
@@ -282,7 +309,9 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
       totalWeight += w
     }
     // Weighted average of region colors
-    let r = 0, g = 0, b = 0
+    let r = 0,
+      g = 0,
+      b = 0
     for (let i = 0; i < regionKeys.length; i++) {
       const ratio = weights[i] / totalWeight
       const [cr, cg, cb] = hexToRgb(brainColors[regionKeys[i]])
@@ -473,7 +502,142 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const labelsContainer = new Container<Text>({ zIndex: 3, isRenderGroup: true })
   const nodesContainer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true })
   const linkContainer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true })
-  stage.addChild(linkContainer, nodesContainer, labelsContainer)
+  const bgContainer = new Container<Graphics>({ zIndex: 0, isRenderGroup: true })
+  stage.addChild(bgContainer, linkContainer, nodesContainer, labelsContainer)
+
+  const brainOutline = new Graphics({ interactive: false, eventMode: "none" })
+  const leftHemisphere = new Graphics({ interactive: false, eventMode: "none" })
+  const rightHemisphere = new Graphics({ interactive: false, eventMode: "none" })
+  const divider = new Graphics({ interactive: false, eventMode: "none" })
+  const sulci = new Graphics({ interactive: false, eventMode: "none" })
+
+  const top = brainLayout.centerY - brainLayout.lobeRadiusY * 0.92
+  const bottom = brainLayout.centerY + brainLayout.lobeRadiusY * 0.9
+  const leftEdge = brainLayout.centerX - brainLayout.lobeOffset - brainLayout.lobeRadiusX * 0.98
+  const rightEdge = brainLayout.centerX + brainLayout.lobeOffset + brainLayout.lobeRadiusX * 0.98
+  const crownY = brainLayout.centerY - brainLayout.lobeRadiusY * 1.06
+
+  leftHemisphere
+    .moveTo(brainLayout.centerX - 2, top + 8)
+    .bezierCurveTo(
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.62,
+      crownY,
+      leftEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.45,
+      leftEdge + 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      leftEdge + 12,
+      bottom - brainLayout.lobeRadiusY * 0.16,
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.45,
+      bottom,
+      brainLayout.centerX - 6,
+      bottom - 6,
+    )
+    .quadraticCurveTo(
+      brainLayout.centerX - 12,
+      brainLayout.centerY,
+      brainLayout.centerX - 2,
+      top + 8,
+    )
+    .fill({ color: brainColors.logical, alpha: 0.08 })
+
+  rightHemisphere
+    .moveTo(brainLayout.centerX + 2, top + 8)
+    .bezierCurveTo(
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.62,
+      crownY,
+      rightEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.45,
+      rightEdge - 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      rightEdge - 12,
+      bottom - brainLayout.lobeRadiusY * 0.16,
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.45,
+      bottom,
+      brainLayout.centerX + 6,
+      bottom - 6,
+    )
+    .quadraticCurveTo(
+      brainLayout.centerX + 12,
+      brainLayout.centerY,
+      brainLayout.centerX + 2,
+      top + 8,
+    )
+    .fill({ color: brainColors.creative, alpha: 0.08 })
+
+  brainOutline
+    .moveTo(brainLayout.centerX - 2, top + 6)
+    .bezierCurveTo(
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.58,
+      crownY - 8,
+      leftEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.42,
+      leftEdge + 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      leftEdge + 12,
+      bottom - brainLayout.lobeRadiusY * 0.14,
+      brainLayout.centerX - brainLayout.lobeRadiusX * 0.42,
+      bottom + 4,
+      brainLayout.centerX,
+      bottom - 8,
+    )
+    .bezierCurveTo(
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.42,
+      bottom + 4,
+      rightEdge - 12,
+      bottom - brainLayout.lobeRadiusY * 0.14,
+      rightEdge - 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.08,
+    )
+    .bezierCurveTo(
+      rightEdge,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.42,
+      brainLayout.centerX + brainLayout.lobeRadiusX * 0.58,
+      crownY - 8,
+      brainLayout.centerX + 2,
+      top + 6,
+    )
+    .stroke({ color: computedStyleMap["--lightgray"], alpha: 0.3, width: 2 })
+
+  divider
+    .moveTo(brainLayout.centerX, top + 8)
+    .bezierCurveTo(
+      brainLayout.centerX + 10,
+      brainLayout.centerY - brainLayout.lobeRadiusY * 0.24,
+      brainLayout.centerX - 8,
+      brainLayout.centerY + brainLayout.lobeRadiusY * 0.26,
+      brainLayout.centerX,
+      bottom - 10,
+    )
+    .stroke({ color: computedStyleMap["--lightgray"], alpha: 0.38, width: 2 })
+
+  const drawSulcus = (xFactor: number, bend: number) => {
+    const x = brainLayout.centerX + brainLayout.lobeRadiusX * xFactor
+    sulci
+      .moveTo(x, brainLayout.centerY - brainLayout.lobeRadiusY * 0.65)
+      .bezierCurveTo(
+        x + bend,
+        brainLayout.centerY - brainLayout.lobeRadiusY * 0.28,
+        x - bend,
+        brainLayout.centerY + brainLayout.lobeRadiusY * 0.15,
+        x,
+        brainLayout.centerY + brainLayout.lobeRadiusY * 0.52,
+      )
+  }
+
+  drawSulcus(-0.52, 8)
+  drawSulcus(-0.3, -10)
+  drawSulcus(0.3, 10)
+  drawSulcus(0.52, -8)
+  sulci.stroke({ color: computedStyleMap["--lightgray"], alpha: 0.16, width: 1.5 })
+
+  bgContainer.addChild(leftHemisphere, rightHemisphere, sulci, divider, brainOutline)
 
   for (const n of graphData.nodes) {
     const nodeId = n.id
@@ -647,7 +811,8 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
         // Tag nodes also get proximity tint (subtle)
         const newColor = proximityColor(d)
         n.gfx.clear()
-        n.gfx.circle(0, 0, nodeRadius(d))
+        n.gfx
+          .circle(0, 0, nodeRadius(d))
           .fill({ color: computedStyleMap["--light"] })
           .stroke({ width: 2, color: newColor })
       }
@@ -664,11 +829,14 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
       const dx = tx - sx
       const dy = ty - sy
       const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < 0.1) { l.gfx.clear(); continue }
+      if (dist < 0.1) {
+        l.gfx.clear()
+        continue
+      }
 
       // Rhizomatic cubic Bézier: two control points for S-curve dendrite-like paths
       // Alternate curvature direction based on link index for visual variety
-      const sign = (li % 2 === 0) ? 1 : -1
+      const sign = li % 2 === 0 ? 1 : -1
       const curveMag = Math.min(dist * 0.18, 25)
       // Perpendicular unit vector
       const px = -dy / dist
@@ -750,9 +918,7 @@ document.addEventListener("nav", async (e: CustomEventMap["nav"]) => {
         sidebar.style.zIndex = "1"
       }
 
-      const graphContainer = container.querySelector(
-        ".global-brain-graph-container",
-      ) as HTMLElement
+      const graphContainer = container.querySelector(".global-brain-graph-container") as HTMLElement
       registerEscapeHandler(container, hideGlobalBrainGraph)
       if (graphContainer) {
         globalBrainGraphCleanups.push(await renderBrainGraph(graphContainer, slug))
