@@ -1,6 +1,6 @@
 ---  
-title: Git Hooks Automation  
-tags: [git, automation, hooks, devops, programación]  
+title: Matemáticas discretas 
+tags: [matemáticas]  
 brain: logical
 ---  
   

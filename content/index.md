@@ -1,5 +1,6 @@
 ---
 title: Welcome to Quartz
+tags: [inbox, temporal]
 ---
 
 This is a blank Quartz installation.

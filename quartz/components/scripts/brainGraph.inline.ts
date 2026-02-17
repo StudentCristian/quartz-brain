@@ -238,6 +238,57 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
     }
   }
 
+  function insideBrainShape(x: number, y: number): boolean {
+    const rx = brainLayout.lobeRadiusX * 0.97
+    const ry = brainLayout.lobeRadiusY * 0.9
+    const leftCx = -brainLayout.lobeOffset * 0.92
+    const rightCx = brainLayout.lobeOffset * 0.92
+
+    const inLeft = (x - leftCx) ** 2 / rx ** 2 + y ** 2 / ry ** 2 <= 1
+    const inRight = (x - rightCx) ** 2 / rx ** 2 + y ** 2 / ry ** 2 <= 1
+
+    const cleft = Math.abs(x) < brainLayout.lobeOffset * 0.18 && y < -brainLayout.lobeRadiusY * 0.18
+    const stem =
+      x > brainLayout.lobeRadiusX * 0.12 &&
+      x < brainLayout.lobeRadiusX * 0.56 &&
+      y > brainLayout.lobeRadiusY * 0.34 &&
+      y < brainLayout.lobeRadiusY * 1.08
+
+    return ((inLeft || inRight) && !cleft) || stem
+  }
+
+  // Gives the layout a stable brain silhouette while preserving rhizomatic movement.
+  function brainShapeForce(strength = 0.22) {
+    const containStrength = strength
+    let nodes: NodeData[] = []
+
+    const force = (alpha: number) => {
+      for (const node of nodes) {
+        if (node.x == null || node.y == null) continue
+        if (insideBrainShape(node.x, node.y)) continue
+
+        const region = regionTarget(node.brain)
+        const pullX = (region.x - node.x) * alpha * containStrength
+        const pullY = (region.y - node.y) * alpha * containStrength
+
+        node.vx = (node.vx ?? 0) + pullX
+        node.vy = (node.vy ?? 0) + pullY
+      }
+    }
+
+    force.initialize = (newNodes: NodeData[]) => {
+      nodes = newNodes
+      for (const node of nodes) {
+        if (node.x != null && node.y != null) continue
+        const target = regionTarget(node.brain)
+        node.x = target.x + (Math.random() - 0.5) * brainLayout.lobeRadiusX * 0.5
+        node.y = target.y + (Math.random() - 0.5) * brainLayout.lobeRadiusY * 0.45
+      }
+    }
+
+    return force
+  }
+
   // Simulation — graph forces + forceX/forceY to prevent orphan nodes from drifting
   const simulation: Simulation<NodeData, LinkData> = forceSimulation<NodeData>(graphData.nodes)
     .force("charge", forceManyBody().strength(-100 * repelForce))
@@ -246,6 +297,7 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
     .force("collide", forceCollide<NodeData>((n) => nodeRadius(n)).iterations(3))
     .force("x", forceX<NodeData>((d) => regionTarget(d.brain).x).strength(0.12))
     .force("y", forceY<NodeData>((d) => regionTarget(d.brain).y).strength(0.14))
+    .force("brain-shape", brainShapeForce(0.26))
 
   const radius = (Math.min(width, height) / 2) * 0.8
   if (enableRadial) simulation.force("radial", forceRadial(radius).strength(0.2))
@@ -291,6 +343,16 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
 
   function rgbToHex(r: number, g: number, b: number): string {
     return "#" + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1)
+  }
+
+  function mixHexColors(a: string, b: string, ratio = 0.5): string {
+    const [ar, ag, ab] = hexToRgb(a)
+    const [br, bg, bb] = hexToRgb(b)
+    return rgbToHex(
+      Math.round(ar * (1 - ratio) + br * ratio),
+      Math.round(ag * (1 - ratio) + bg * ratio),
+      Math.round(ab * (1 - ratio) + bb * ratio),
+    )
   }
 
   // For unclassified nodes, compute a blended color based on proximity to brain region anchors
@@ -339,6 +401,14 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
     } else {
       return computedStyleMap["--gray"]
     }
+  }
+
+  function visualNodeColor(d: NodeData): string {
+    if (d.id.startsWith("tags/")) return computedStyleMap["--tertiary"]
+    if (d.id === slug) return computedStyleMap["--secondary"]
+    if (d.brain && brainColors[d.brain]) return brainColors[d.brain]
+    if (visited.has(d.id)) return computedStyleMap["--tertiary"]
+    return proximityColor(d)
   }
 
   function nodeRadius(d: NodeData) {
@@ -502,59 +572,7 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
   const labelsContainer = new Container<Text>({ zIndex: 3, isRenderGroup: true })
   const nodesContainer = new Container<Graphics>({ zIndex: 2, isRenderGroup: true })
   const linkContainer = new Container<Graphics>({ zIndex: 1, isRenderGroup: true })
-  const bgContainer = new Container<Graphics>({ zIndex: 0, isRenderGroup: true })
-  stage.addChild(bgContainer, linkContainer, nodesContainer, labelsContainer)
-
-  const brainOutline = new Graphics({ interactive: false, eventMode: "none" })
-  const leftLobe = new Graphics({ interactive: false, eventMode: "none" })
-  const rightLobe = new Graphics({ interactive: false, eventMode: "none" })
-  const divider = new Graphics({ interactive: false, eventMode: "none" })
-
-  leftLobe
-    .ellipse(
-      brainLayout.centerX - brainLayout.lobeOffset,
-      brainLayout.centerY,
-      brainLayout.lobeRadiusX,
-      brainLayout.lobeRadiusY,
-    )
-    .fill({ color: brainColors.logical, alpha: 0.06 })
-
-  rightLobe
-    .ellipse(
-      brainLayout.centerX + brainLayout.lobeOffset,
-      brainLayout.centerY,
-      brainLayout.lobeRadiusX,
-      brainLayout.lobeRadiusY,
-    )
-    .fill({ color: brainColors.creative, alpha: 0.06 })
-
-  divider
-    .moveTo(brainLayout.centerX, brainLayout.centerY - brainLayout.lobeRadiusY * 0.84)
-    .quadraticCurveTo(
-      brainLayout.centerX + 8,
-      brainLayout.centerY,
-      brainLayout.centerX,
-      brainLayout.centerY + brainLayout.lobeRadiusY * 0.84,
-    )
-    .stroke({ color: computedStyleMap["--lightgray"], alpha: 0.35, width: 2 })
-
-  brainOutline
-    .ellipse(
-      brainLayout.centerX - brainLayout.lobeOffset,
-      brainLayout.centerY,
-      brainLayout.lobeRadiusX,
-      brainLayout.lobeRadiusY,
-    )
-    .stroke({ color: computedStyleMap["--lightgray"], alpha: 0.2, width: 2 })
-    .ellipse(
-      brainLayout.centerX + brainLayout.lobeOffset,
-      brainLayout.centerY,
-      brainLayout.lobeRadiusX,
-      brainLayout.lobeRadiusY,
-    )
-    .stroke({ color: computedStyleMap["--lightgray"], alpha: 0.2, width: 2 })
-
-  bgContainer.addChild(leftLobe, rightLobe, divider, brainOutline)
+  stage.addChild(linkContainer, nodesContainer, labelsContainer)
 
   for (const n of graphData.nodes) {
     const nodeId = n.id
@@ -765,11 +783,23 @@ async function renderBrainGraph(graph: HTMLElement, fullSlug: FullSlug) {
       const cp2x = sx + dx * 0.67 - px * curveMag * sign * 0.5
       const cp2y = sy + dy * 0.67 - py * curveMag * sign * 0.5
 
+      const sourceColor = visualNodeColor(linkData.source)
+      const targetColor = visualNodeColor(linkData.target)
+      const blendedLinkColor = mixHexColors(sourceColor, targetColor, 0.5)
+      const finalLinkColor = mixHexColors(blendedLinkColor, computedStyleMap["--lightgray"], 0.38)
+      const sameHemisphere =
+        linkData.source.brain &&
+        linkData.target.brain &&
+        BRAIN_REGIONS[linkData.source.brain]?.hemisphere ===
+          BRAIN_REGIONS[linkData.target.brain]?.hemisphere
+
       l.gfx.clear()
       l.gfx.moveTo(sx, sy)
-      l.gfx
-        .bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty)
-        .stroke({ alpha: l.alpha, width: 1, color: l.color })
+      l.gfx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, tx, ty).stroke({
+        alpha: l.alpha,
+        width: sameHemisphere ? 1.3 : 1,
+        color: l.active ? blendedLinkColor : finalLinkColor,
+      })
     }
 
     tweens.forEach((t) => t.update(time))
